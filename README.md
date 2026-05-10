@@ -39,7 +39,7 @@ Dashboard de notificaciones en tiempo real para [Gotify](https://gotify.net/), c
 1. Clonar el repositorio:
 
 ```bash
-git clone https://github.com/osdaeg/sentry.git
+git clone https://codeberg.org/osdaeg/sentry.git
 cd sentry
 ```
 
