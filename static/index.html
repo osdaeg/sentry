@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss: http: https:; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: *;">
+<title>SENTRY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0e17;
+    --surface: #1A1B26;
+    --surface2: #16172280;
+    --border: rgba(255,255,255,0.07);
+    --text: #e2e4f0;
+    --text-muted: #6b7280;
+    --accent: #7c6af7;
+    --bar-h: 48px;
+    --notif-opacity: 0.70;
+    --radius: 14px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Background image layer */
+  #bg-layer {
+    position: fixed;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 0;
+    opacity: 0.18;
+    transition: opacity 0.5s;
+  }
+
+  /* Top bar */
+  #top-bar {
+    position: relative;
+    z-index: 10;
+    height: var(--bar-h);
+    background: rgba(26, 27, 38, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    flex-shrink: 0;
+  }
+
+  #top-bar .brand {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: var(--accent);
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+
+  #top-bar .clock-area {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  #clock {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  #date {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  #ws-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  #ws-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #374151;
+    transition: background 0.4s;
+  }
+  #ws-dot.connected { background: #4ADE80; box-shadow: 0 0 6px #4ADE8088; }
+  #ws-dot.connecting { background: #FBBF24; animation: pulse-dot 1s infinite; }
+  #ws-dot.error { background: #f87171; }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+  }
+
+  /* Main notifications area */
+  #main {
+    position: relative;
+    z-index: 5;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(124,106,247,0.3) transparent;
+  }
+
+  #main::-webkit-scrollbar { width: 4px; }
+  #main::-webkit-scrollbar-thumb { background: rgba(124,106,247,0.3); border-radius: 2px; }
+
+  /* Priority-10 pinned zone */
+  #pinned-zone {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  #regular-zone {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* Notification card */
+  .notif {
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    animation: slideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transform-origin: top center;
+    position: relative;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    flex-shrink: 0;
+  }
+
+  .notif.priority-10 {
+    border-color: rgba(251, 191, 36, 0.35);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(251,191,36,0.1);
+  }
+
+  .notif.priority-10 .notif-titlebar {
+    border-bottom: 1px solid rgba(251, 191, 36, 0.2);
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-20px) scaleY(0.9);
+      max-height: 0;
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scaleY(1);
+      max-height: 500px;
+    }
+  }
+
+  @keyframes fadeOut {
+    from { opacity: 1; transform: scaleY(1); max-height: 500px; }
+    to { opacity: 0; transform: scaleY(0.95); max-height: 0; padding: 0; margin: 0; }
+  }
+
+  .notif.removing {
+    animation: fadeOut 0.3s ease forwards;
+    pointer-events: none;
+  }
+
+  /* Titlebar */
+  .notif-titlebar {
+    background: #1A1B26;
+    padding: 9px 14px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .priority-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px currentColor;
+  }
+
+  .notif-app {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(226, 228, 240, 0.7);
+    flex: 1;
+  }
+
+  .notif-time {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+
+  /* Priority 10 countdown bar */
+  .priority-bar-wrap {
+    height: 2px;
+    background: rgba(251, 191, 36, 0.15);
+    overflow: hidden;
+    display: none;
+  }
+  .notif.priority-10 .priority-bar-wrap { display: block; }
+
+  .priority-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #FBBF24, #F59E0B);
+    width: 100%;
+    transition: width linear;
+    transform-origin: left;
+  }
+
+  /* Body */
+  .notif-body {
+    background: rgba(26, 27, 38, var(--notif-opacity));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 12px 14px 14px;
+  }
+
+  .notif-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 5px;
+    line-height: 1.3;
+  }
+
+  .notif-message {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: rgba(226, 228, 240, 0.75);
+    line-height: 1.5;
+  }
+
+  /* Empty state */
+  #empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 10px;
+    opacity: 0.18;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  #empty-state .eye {
+    font-size: 48px;
+    line-height: 1;
+  }
+
+  #empty-state p {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+  }
+
+  /* Log panel */
+  #log-toggle {
+    flex-shrink: 0;
+    margin-left: auto;
+    margin-right: 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+  }
+  #log-toggle:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+
+  #log-panel {
+    position: fixed;
+    bottom: var(--bar-h);
+    left: 0;
+    right: 0;
+    z-index: 12;
+    background: rgba(13, 14, 23, 0.97);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    max-height: 40vh;
+    overflow-y: auto;
+    transform: translateY(calc(100% + var(--bar-h)));
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(124,106,247,0.3) transparent;
+  }
+  #log-panel.open { transform: translateY(0); }
+  #log-panel::-webkit-scrollbar { width: 4px; }
+  #log-panel::-webkit-scrollbar-thumb { background: rgba(124,106,247,0.3); border-radius: 2px; }
+
+  #log-header {
+    padding: 10px 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    background: rgba(13, 14, 23, 0.99);
+  }
+
+  #log-clear {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 9px;
+    transition: color 0.2s;
+  }
+  #log-clear:hover { color: #f87171; }
+
+  #log-list {
+    padding: 8px 0;
+  }
+
+  .log-entry {
+    display: grid;
+    grid-template-columns: 130px 90px 1fr;
+    gap: 12px;
+    padding: 6px 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    align-items: baseline;
+  }
+  .log-entry:last-child { border-bottom: none; }
+
+  .log-ts { color: var(--text-muted); }
+  .log-app { color: var(--accent); letter-spacing: 0.05em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-msg { color: rgba(226,228,240,0.7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Bottom status bar */
+  #bottom-bar {
+    position: relative;
+    z-index: 10;
+    height: var(--bar-h);
+    background: rgba(26, 27, 38, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  #services-wrapper {
+    flex: 1;
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    align-items: center;
+  }
+
+  #services-track {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    white-space: nowrap;
+    animation: marquee 20s linear infinite;
+    padding-left: 100%;
+  }
+
+  #services-track.no-animate {
+    animation: none;
+    padding-left: 16px;
+  }
+
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-100%); }
+  }
+
+  .service-item {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
+  }
+
+  .service-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .service-item.online { color: #4ADE80; }
+  .service-item.online .service-dot { background: #4ADE80; box-shadow: 0 0 5px #4ADE8066; }
+  .service-item.offline { color: #f87171; }
+  .service-item.offline .service-dot { background: #f87171; box-shadow: 0 0 5px #f8717166; }
+  .service-item.checking { color: var(--text-muted); }
+  .service-item.checking .service-dot { background: var(--text-muted); }
+
+  /* Separator in marquee */
+  .service-sep {
+    color: var(--border);
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    opacity: 0.4;
+  }
+
+  /* Priority colors map used in JS */
+  /* 1:#4ADE80 2:#84CC16 3:#A3E635 4:#BEF264 5:#D9F99D 6:#FEF08A 7:#FDE047 8:#FACC15 9:#F59E0B 10:#FBBF24 */
+</style>
+</head>
+<body>
+
+<div id="bg-layer"></div>
+
+<!-- TOP BAR -->
+<div id="top-bar">
+  <div class="brand">⬡ Sentry</div>
+  <div class="clock-area">
+    <div id="clock">00:00:00</div>
+    <div id="date">—</div>
+  </div>
+  <div id="ws-status">
+    <div id="ws-dot"></div>
+    <span id="ws-label">offline</span>
+  </div>
+</div>
+
+<!-- NOTIFICATIONS -->
+<div id="main">
+  <div id="pinned-zone"></div>
+  <div id="regular-zone"></div>
+  <div id="empty-state">
+    <div class="eye">◉</div>
+    <p>Aguardando señales</p>
+  </div>
+</div>
+
+<!-- LOG PANEL -->
+<div id="log-panel">
+  <div id="log-header">
+    <span>Registro completo</span>
+    <span id="log-clear">Limpiar</span>
+  </div>
+  <div id="log-list"></div>
+</div>
+
+<!-- BOTTOM BAR -->
+<div id="bottom-bar">
+  <div id="services-wrapper">
+    <div id="services-track">
+      <span class="service-item checking">
+        <span class="service-dot"></span>Cargando servicios...
+      </span>
+    </div>
+  </div>
+  <button id="log-toggle">Log ▲</button>
+</div>
+
+<script>
+// ─── Config ──────────────────────────────────────────────────────────────────
+let CFG = {
+  gotify_url: '',
+  gotify_token: '',
+  background_image: '',
+  notification_opacity: 0.70,
+  priority10_duration: 30,
+  services: []
+};
+
+// ─── Priority colors ──────────────────────────────────────────────────────────
+const PRIORITY_COLORS = {
+  1:'#4ADE80', 2:'#84CC16', 3:'#A3E635', 4:'#BEF264',
+  5:'#D9F99D', 6:'#FEF08A', 7:'#FDE047', 8:'#FACC15',
+  9:'#F59E0B', 10:'#FBBF24'
+};
+
+function priorityColor(p) {
+  const n = Math.min(10, Math.max(1, Math.round(p)));
+  return PRIORITY_COLORS[n] || '#6b7280';
+}
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let notifications = [];
+let log = [];
+let sseInstance = null;
+const seenIds = new Set();
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const pinnedZone   = document.getElementById('pinned-zone');
+const regularZone  = document.getElementById('regular-zone');
+const emptyState   = document.getElementById('empty-state');
+const wsDot        = document.getElementById('ws-dot');
+const wsLabel      = document.getElementById('ws-label');
+const logPanel     = document.getElementById('log-panel');
+const logList      = document.getElementById('log-list');
+const servicesTrack = document.getElementById('services-track');
+
+// ─── Clock ───────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  const ss = String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${hh}:${mm}:${ss}`;
+
+  const days = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const d = `${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  document.getElementById('date').textContent = d;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── WS Status UI ─────────────────────────────────────────────────────────────
+function setWsStatus(status) {
+  wsDot.className = '';
+  if (status === 'connected') {
+    wsDot.classList.add('connected');
+    wsLabel.textContent = 'live';
+  } else if (status === 'connecting') {
+    wsDot.classList.add('connecting');
+    wsLabel.textContent = 'connecting';
+  } else {
+    wsLabel.textContent = 'offline';
+  }
+}
+
+// ─── Notification rendering ──────────────────────────────────────────────────
+function formatTime(d) {
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000) return 'ahora';
+  if (diff < 3600000) return `${Math.floor(diff/60000)}m`;
+  return d.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' });
+}
+
+function formatTimestamp(d) {
+  return d.toLocaleString('es-AR', {
+    day:'2-digit', month:'2-digit', year:'numeric',
+    hour:'2-digit', minute:'2-digit', second:'2-digit'
+  });
+}
+
+function makeNotifEl(notif, historical = false) {
+  const color = priorityColor(notif.priority);
+  const isPrio10 = notif.priority >= 10 && !historical;
+
+  const el = document.createElement('div');
+  el.className = `notif${isPrio10 ? ' priority-10' : ''}`;
+  el.dataset.id = notif.id;
+  el.style.setProperty('--notif-opacity', CFG.notification_opacity);
+
+  el.innerHTML = `
+    <div class="notif-titlebar">
+      <div class="priority-dot" style="background:${color};color:${color}"></div>
+      <div class="notif-app">${escHtml(notif.appname || 'Sistema')}</div>
+      <div class="notif-time">${formatTime(notif.date)}</div>
+    </div>
+    <div class="priority-bar-wrap">
+      <div class="priority-bar" id="pbar-${notif.id}"></div>
+    </div>
+    <div class="notif-body">
+      <div class="notif-title">${escHtml(notif.title || '')}</div>
+      <div class="notif-message">${escHtml(notif.message || '')}</div>
+    </div>
+  `;
+
+  // Priority-10: start countdown
+  if (isPrio10) {
+    const duration = CFG.priority10_duration * 1000;
+    const bar = el.querySelector(`#pbar-${notif.id}`);
+    // Start transition after paint
+    requestAnimationFrame(() => {
+      bar.style.transition = `width ${CFG.priority10_duration}s linear`;
+      bar.style.width = '0%';
+    });
+
+    notif._prio10Timer = setTimeout(() => {
+      demotePrio10(notif.id);
+    }, duration);
+  }
+
+  return el;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/\n/g,'<br>');
+}
+
+function updateEmptyState() {
+  emptyState.style.display = notifications.length === 0 ? 'flex' : 'none';
+}
+
+function addNotification(data) {
+  const notif = {
+    id: data.id || Date.now(),
+    appname: data.appname || 'Sistema',
+    title: data.title || '',
+    message: data.message || '',
+    priority: data.extras?.priority ?? data.priority ?? 1,
+    date: new Date(),
+    pinned: false
+  };
+
+  // Add to log
+  addToLog(notif);
+
+  const isPrio10 = notif.priority >= 10;
+
+  if (isPrio10) {
+    notif.pinned = true;
+    // Prepend to pinned zone
+    const el = makeNotifEl(notif);
+    pinnedZone.prepend(el);
+    notifications.unshift(notif);
+  } else {
+    // Prepend to regular zone
+    const el = makeNotifEl(notif);
+    regularZone.prepend(el);
+    notifications.unshift(notif);
+  }
+
+  updateEmptyState();
+}
+
+function demotePrio10(id) {
+  const notif = notifications.find(n => n.id === id);
+  if (!notif) return;
+
+  notif.pinned = false;
+
+  // Mover el elemento DOM existente a regular zone sin recrearlo
+  const el = pinnedZone.querySelector(`[data-id="${id}"]`);
+  if (el) {
+    el.classList.remove('priority-10');
+    // Ocultar la barra de countdown
+    const barWrap = el.querySelector('.priority-bar-wrap');
+    if (barWrap) barWrap.style.display = 'none';
+    regularZone.prepend(el);
+  }
+}
+
+function removeNotif(id) {
+  const el = document.querySelector(`.notif[data-id="${id}"]`);
+  if (el) {
+    el.classList.add('removing');
+    setTimeout(() => el.remove(), 300);
+  }
+  notifications = notifications.filter(n => n.id !== id);
+  updateEmptyState();
+}
+
+// ─── Log ─────────────────────────────────────────────────────────────────────
+function addToLog(notif) {
+  log.unshift(notif);
+  if (log.length > 500) log.pop();
+  renderLogEntry(notif, true);
+}
+
+function renderLogEntry(notif, prepend = false) {
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `
+    <span class="log-ts">${formatTimestamp(notif.date)}</span>
+    <span class="log-app">${escHtml(notif.appname)}</span>
+    <span class="log-msg">${escHtml(notif.title + (notif.message ? ' — ' + notif.message : ''))}</span>
+  `;
+  if (prepend) logList.prepend(entry);
+  else logList.appendChild(entry);
+}
+
+document.getElementById('log-toggle').addEventListener('click', () => {
+  logPanel.classList.toggle('open');
+  document.getElementById('log-toggle').textContent = logPanel.classList.contains('open') ? 'Log ▼' : 'Log ▲';
+});
+
+document.getElementById('log-clear').addEventListener('click', () => {
+  log = [];
+  logList.innerHTML = '';
+});
+
+// ─── SSE (Server-Sent Events relay) ──────────────────────────────────────────
+function connectSSE() {
+  setWsStatus('connecting');
+
+  if (sseInstance) sseInstance.close();
+
+  sseInstance = new EventSource('/api/stream');
+
+  sseInstance.addEventListener('status', (e) => {
+    if (e.data === 'connected') {
+      setWsStatus('connected');
+    } else {
+      setWsStatus('connecting');
+    }
+  });
+
+  sseInstance.onmessage = (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      console.log(`[SSE] id:${data.id} app:${data.appname} title:${data.title} priority:${data.priority}`);
+      if (seenIds.has(data.id)) { console.log(`[SSE] duplicado ignorado id:${data.id}`); return; }
+      seenIds.add(data.id);
+      addNotification(data);
+    } catch(e) {
+      console.error('SSE parse error', e);
+    }
+  };
+
+  sseInstance.onerror = () => {
+    setWsStatus('offline');
+    // El browser reintenta SSE automáticamente, no hace falta timer manual
+  };
+}
+
+// ─── Services bar ─────────────────────────────────────────────────────────────
+function renderServices(services) {
+  if (!services || services.length === 0) {
+    servicesTrack.innerHTML = '<span class="service-item checking"><span class="service-dot"></span>Sin servicios configurados</span>';
+    servicesTrack.classList.add('no-animate');
+    return;
+  }
+
+  // Build items (duplicated for seamless marquee if many)
+  const items = services.map(s => {
+    const cls = s.online ? 'online' : 'offline';
+    return `<span class="service-item ${cls}"><span class="service-dot"></span>${escHtml(s.name)}</span><span class="service-sep">·</span>`;
+  }).join('');
+
+  const totalItems = services.length;
+  if (totalItems <= 4) {
+    servicesTrack.innerHTML = items;
+    servicesTrack.classList.add('no-animate');
+  } else {
+    servicesTrack.innerHTML = items + items; // duplicate for seamless loop
+    servicesTrack.classList.remove('no-animate');
+  }
+}
+
+async function pollServices() {
+  if (!CFG.services || CFG.services.length === 0) return;
+  try {
+    const res = await fetch('/api/ping');
+    const data = await res.json();
+    renderServices(data.services);
+  } catch(e) {
+    console.warn('Ping fetch error', e);
+  }
+}
+
+// ─── History ─────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const res = await fetch('/api/history');
+    const data = await res.json();
+    const messages = data.messages || [];
+
+    // Add oldest first so newest ends up on top
+    const reversed = [...messages].reverse();
+    for (const msg of reversed) {
+      if (seenIds.has(msg.id)) continue;
+      seenIds.add(msg.id);
+
+      const notif = {
+        id: msg.id,
+        appname: msg.appname || 'Sistema',
+        title: msg.title || '',
+        message: msg.message || '',
+        priority: msg.priority ?? 1,
+        date: new Date(msg.date),
+        pinned: false,
+        historical: true,
+      };
+
+      // Historical messages always go to regular zone, no countdown
+      addToLog(notif);
+      notifications.unshift(notif);
+      const el = makeNotifEl(notif, true);
+      regularZone.prepend(el);
+    }
+
+    updateEmptyState();
+  } catch(e) {
+    console.warn('History fetch error', e);
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const res = await fetch('/api/config');
+    CFG = await res.json();
+
+    // Apply background
+    if (CFG.background_image) {
+      document.getElementById('bg-layer').style.backgroundImage = `url('${CFG.background_image}')`;
+    }
+
+    // Apply opacity CSS var
+    document.documentElement.style.setProperty('--notif-opacity', CFG.notification_opacity);
+
+    // Load history
+    await loadHistory();
+
+    // Connect SSE
+    connectSSE();
+
+    // Services
+    if (CFG.services && CFG.services.length > 0) {
+      // Initial render as "checking"
+      const checking = CFG.services.map(s => ({ ...s, online: true, checking: true }));
+      renderServices(checking.map(s => ({ name: s.name, online: true })));
+      pollServices();
+      setInterval(pollServices, 30000);
+    } else {
+      servicesTrack.innerHTML = '<span class="service-item checking"><span class="service-dot"></span>Sin servicios configurados</span>';
+      servicesTrack.classList.add('no-animate');
+    }
+
+  } catch(e) {
+    console.error('Init error', e);
+    setWsStatus('error');
+  }
+}
+
+updateEmptyState();
+init();
+</script>
+</body>
+</html>

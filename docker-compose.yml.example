@@ -1,0 +1,17 @@
+services:
+  sentry:
+    build: .
+    container_name: sentry
+    restart: unless-stopped
+    ports:
+      - "8700:8000"
+    env_file:
+      - .env
+    networks:
+      - TuRed
+    volumes:
+      - ./static/fondo.png:/app/static/fondo.png  
+
+networks:
+  TuRed:
+    external: true
