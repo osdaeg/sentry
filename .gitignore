@@ -6,3 +6,11 @@ prompt.txt
 README.md.github
 
 README.md.codeberg
+
+backup_stack.sh
+
+sentry.edit
+
+sentry.list
+
+*.bak
